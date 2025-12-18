@@ -1,0 +1,112 @@
+﻿services:
+  # Redis (Cache)
+  redis:
+    image: redis:7-alpine
+    container_name: iot-redis
+    ports:
+      - '6379:6379'
+    networks:
+      - iot-network
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Zookeeper (for Kafka)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: iot-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - iot-network
+
+   # Kafka
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: iot-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - '9092:9092'
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    networks:
+      - iot-network
+
+  # Ingestion API
+  ingestion-api:
+    build:
+      context: ./services/ingestion
+      dockerfile: Dockerfile
+    container_name: iot-ingestion
+    ports:
+      - '8000:8000'
+    depends_on:
+      - redis
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+    volumes:
+      - ./services/ingestion:/app
+    networks:
+      - iot-network
+  # Processor Worker
+  processor-worker:
+    build:
+      context: ./services/processor
+      dockerfile: Dockerfile
+    container_name: iot-processor
+    depends_on:
+      - redis
+      - kafka
+    environment:
+      - REDIS_HOST=redis
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - SNOWFLAKE_ACCOUNT=${SNOWFLAKE_ACCOUNT}
+      - SNOWFLAKE_USER=${SNOWFLAKE_USER}
+      - SNOWFLAKE_PASSWORD=${SNOWFLAKE_PASSWORD}
+      - SNOWFLAKE_ROLE=${SNOWFLAKE_ROLE}
+      - SNOWFLAKE_WAREHOUSE=${SNOWFLAKE_WAREHOUSE}
+      - SNOWFLAKE_DATABASE=${SNOWFLAKE_DATABASE}
+      - SNOWFLAKE_SCHEMA=${SNOWFLAKE_SCHEMA}
+    volumes:
+      - ./services/processor:/app
+    networks:
+      - iot-network
+
+  # Query API
+  query-api:
+    build:
+      context: ./services/query
+      dockerfile: Dockerfile
+    container_name: iot-query
+    ports:
+      - '8001:8001'
+    environment:
+      - SNOWFLAKE_ACCOUNT=${SNOWFLAKE_ACCOUNT}
+      - SNOWFLAKE_USER=${SNOWFLAKE_USER}
+      - SNOWFLAKE_PASSWORD=${SNOWFLAKE_PASSWORD}
+      - SNOWFLAKE_ROLE=${SNOWFLAKE_ROLE}
+      - SNOWFLAKE_WAREHOUSE=${SNOWFLAKE_WAREHOUSE}
+      - SNOWFLAKE_DATABASE=${SNOWFLAKE_DATABASE}
+      - SNOWFLAKE_SCHEMA=${SNOWFLAKE_SCHEMA}
+    volumes:
+      - ./services/query:/app
+    networks:
+      - iot-network
+
+networks:
+  iot-network:
+    driver: bridge

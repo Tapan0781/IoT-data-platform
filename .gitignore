@@ -1,0 +1,26 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*.class
+venv/
+*.egg-info/
+.pytest_cache/
+htmlcov/
+
+# Environment
+.env
+*.env
+
+# IDE
+.vscode/
+.idea/
+
+# Docker
+.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
